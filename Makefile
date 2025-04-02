@@ -180,7 +180,7 @@ lint: fix pre-commit type-check # slotscheck             ## Run all linting chec
 	@echo "${OK} All linting checks passed ✨"
 
 .PHONY: check-all
-check-all: lint test-all # coverage                  ## Run all checks (lint, test, coverage)
+check-all: lint test # coverage                  ## Run all checks (lint, test, coverage)
 	@echo "${OK} All checks passed successfully ✨"
 # =============================================================================
 # Documentation
