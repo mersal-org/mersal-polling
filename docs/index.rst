@@ -1,4 +1,6 @@
-Welcome to Mersal RabbitMQ's documentation!
-==================================
+Welcome to mersal-polling documentation!
+==========================================
 
-This is the implementation of a RabbitMQ transport for Mersal.
+Polling plugin for Mersal
+
+docs coming soon...
