@@ -22,6 +22,7 @@ from mersal_polling import (
     PollerWithTimeout,
     PollingConfig,
     PollingTimeoutError,
+    ProblemDetails,
 )
 from mersal_polling.config import (
     FailedCompletionCorrelation,
@@ -151,7 +152,7 @@ class TestPollingPlugin:
 
         result = await poller.poll(message1_id)
         assert result
-        assert not result.exception
+        assert result.is_success
 
         await app.send_local(Message1(), headers={"message_id": uuid.uuid4()})
         await anyio.sleep(0.5)
@@ -207,9 +208,9 @@ class TestPollingPlugin:
         result1 = await poller.poll(message1_id)
         result2 = await poller.poll(message2_id)
         assert result1
-        assert not result1.exception
+        assert result1.is_success
         assert result2
-        assert not result2.exception
+        assert result2.is_success
 
         await app.stop()
 
@@ -233,10 +234,20 @@ class TestPollingPlugin:
                     poller,
                     failed_completion_events_map={
                         Message1FailedToComplete: FailedCompletionCorrelation(
-                            exception_builder=lambda event: ValueError("hi")
+                            problem_builder=lambda event: ProblemDetails(
+                                type="https://api.example.com/problems/message1-failed",
+                                title="Message1 Failed",
+                                status=400,
+                                detail="Message1 failed to complete",
+                            )
                         ),
                         Message2FailedToComplete: FailedCompletionCorrelation(
-                            exception_builder=lambda event: ValueError("hi-bye")
+                            problem_builder=lambda event: ProblemDetails(
+                                type="https://api.example.com/problems/message2-failed",
+                                title="Message2 Failed",
+                                status=422,
+                                detail="Message2 failed to complete",
+                            )
                         ),
                     },
                     exclude_from_completion_events={
@@ -266,11 +277,16 @@ class TestPollingPlugin:
         result2 = await poller.poll(message2_id)
 
         assert result1
-        assert result1.exception
-        assert type(result1.exception) is ValueError
+        assert result1.is_failure
+        assert result1.problem is not None
+        assert result1.problem.status == 400
+        assert result1.problem.title == "Message1 Failed"
+
         assert result2
-        assert result2.exception
-        assert type(result2.exception) is ValueError
+        assert result2.is_failure
+        assert result2.problem is not None
+        assert result2.problem.status == 422
+        assert result2.problem.title == "Message2 Failed"
 
         await app.stop()
 
@@ -301,7 +317,9 @@ class TestPollingPlugin:
         await anyio.sleep(0.1)
         result = await poller.poll(message_id)
         assert result
-        assert result.exception
+        assert result.is_failure
+        assert result.problem is not None
+        assert result.problem.status == 500
 
         await app.stop()
 

@@ -1,13 +1,20 @@
 import uuid
+from typing import Any
 
 from anyio import Event
 
-from .poller import Poller, PollingResult
+from .poller import Poller, PollingResult, ProblemDetails
 
 __all__ = ("DefaultPoller",)
 
 
 class DefaultPoller(Poller):
+    """In-memory implementation of the Poller protocol.
+
+    Suitable for single-server deployments or testing. For multi-server
+    deployments, use a distributed poller implementation (e.g., DatabasePoller).
+    """
+
     def __init__(self) -> None:
         self.results: dict[uuid.UUID, PollingResult] = {}
         self.events: dict[uuid.UUID, Event] = {}
@@ -28,9 +35,22 @@ class DefaultPoller(Poller):
         # Return the result (should be available now)
         return self.results[message_id]
 
-    async def push(self, message_id: uuid.UUID, exception: Exception | None = None) -> None:
+    async def peek(self, message_id: uuid.UUID) -> PollingResult | None:
+        """Check if a result exists without blocking."""
+        return self.results.get(message_id)
+
+    async def push(
+        self,
+        message_id: uuid.UUID,
+        data: dict[str, Any] | None = None,
+        problem: ProblemDetails | None = None,
+    ) -> None:
         # Store the result
-        self.results[message_id] = PollingResult(message_id, exception)
+        self.results[message_id] = PollingResult(
+            message_id=message_id,
+            data=data,
+            problem=problem,
+        )
 
         # If there's a waiting event, trigger it
         if message_id in self.events:

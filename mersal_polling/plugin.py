@@ -46,6 +46,7 @@ class PollingPlugin(Plugin):
         self._failed_completion_events_map = config.failed_completion_events_map
         self._auto_publish_completion_events = config.auto_publish_completion_events
         self._exclude_from_completion_events = config.exclude_from_completion_events
+        self._problem_factory = config.problem_factory
 
     def __call__(self, configurator: StandardConfigurator) -> None:
         """Configure the Mersal application with polling functionality.
@@ -102,7 +103,7 @@ class PollingPlugin(Plugin):
 
         def decorate_error_handler(configurator: StandardConfigurator) -> Any:
             error_handler: ErrorHandler = configurator.get(ErrorHandler)  # type: ignore[type-abstract]
-            return ErrorHandlerPollerWrapper(self._poller, error_handler)
+            return ErrorHandlerPollerWrapper(self._poller, error_handler, problem_factory=self._problem_factory)
 
         configurator.decorate(ErrorHandler, decorate_error_handler)
 
@@ -172,7 +173,7 @@ class PollingPlugin(Plugin):
         Args:
             event: The message completed event
         """
-        await self._poller.push(event.completed_message_id, None)
+        await self._poller.push(event.completed_message_id)
 
     def _successfull_custom_completion_event_handler_factory(
         self,
@@ -194,7 +195,12 @@ class PollingPlugin(Plugin):
                 message_id = message_id_getter(event)
             else:
                 message_id = message_context.headers.correlation_id
-            await self._poller.push(message_id, None)
+
+            data = None
+            if data_builder := correlator.data_builder:
+                data = data_builder(event)
+
+            await self._poller.push(message_id, data=data)
 
         return _custom_completion_event_handler
 
@@ -217,11 +223,11 @@ class PollingPlugin(Plugin):
             else:
                 message_id = message_context.headers.correlation_id
 
-            if exception_builder := correlator.exception_builder:
-                exception = exception_builder(event)
-            else:
-                exception = Exception("Event error")
-            await self._poller.push(message_id, exception)
+            problem = None
+            if problem_builder := correlator.problem_builder:
+                problem = problem_builder(event)
+
+            await self._poller.push(message_id, problem=problem)
 
         return _custom_completion_event_handler
 
