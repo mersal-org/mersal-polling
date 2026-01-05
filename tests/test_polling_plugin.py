@@ -25,6 +25,7 @@ from mersal_polling import (
     ProblemDetails,
 )
 from mersal_polling.config import (
+    AcceptedCorrelation,
     FailedCompletionCorrelation,
     SuccessfulCompletionCorrelation,
 )
@@ -70,6 +71,16 @@ class Message1FailedToComplete:
 
 @dataclass
 class Message2FailedToComplete:
+    pass
+
+
+@dataclass
+class Message1Accepted:
+    pass
+
+
+@dataclass
+class Message2Accepted:
     pass
 
 
@@ -401,3 +412,91 @@ class TestPollingPlugin:
         _poller = PollerWithTimeout(poller)
         with pytest.raises(PollingTimeoutError):
             _ = await _poller.poll(message_id, 1)
+
+    async def test_polling_with_accepted_events(
+        self,
+        in_memory_transport: InMemoryTransport,
+        in_memory_subscription_storage: InMemorySubscriptionStorage,
+        serializer: Serializer,
+    ):
+        activator = BuiltinHandlerActivator()
+        poller = DefaultPoller()
+        app = Mersal(
+            "m1",
+            activator,
+            transport=in_memory_transport,
+            serializer=serializer,
+            subscription_storage=in_memory_subscription_storage,
+            autosubscribe=AutosubscribeConfig(set()),
+            plugins=[
+                PollingConfig(
+                    poller,
+                    accepted_events_map={
+                        Message1Accepted: AcceptedCorrelation(),
+                        Message2Accepted: AcceptedCorrelation(),
+                    },
+                    successful_completion_events_map={
+                        Message1CompletedSuccessfully: SuccessfulCompletionCorrelation(),
+                        Message2CompletedSuccessfully: SuccessfulCompletionCorrelation(),
+                    },
+                    exclude_from_completion_events={
+                        Message1,
+                        Message2,
+                    },
+                ).plugin
+            ],
+        )
+        activator.register(
+            Message1,
+            lambda m, b: MessageHandlerThatPublishes(m, b, Message1Accepted()),
+        )
+        activator.register(
+            Message2,
+            lambda m, b: MessageHandlerThatPublishes(m, b, Message2Accepted()),
+        )
+        message1_id = uuid.uuid4()
+        message2_id = uuid.uuid4()
+        await app.start()
+
+        await app.send_local(Message1(), headers={"message_id": message1_id})
+        await app.send_local(Message2(), headers={"message_id": message2_id})
+        await anyio.sleep(0.5)
+
+        # Poll for accepted state
+        result1 = await poller.poll(message1_id)
+        result2 = await poller.poll(message2_id)
+
+        assert result1
+        assert result1.is_accepted
+        assert result1.status == "accepted"
+        assert not result1.is_success
+        assert not result1.is_failure
+
+        assert result2
+        assert result2.is_accepted
+        assert result2.status == "accepted"
+        assert not result2.is_success
+        assert not result2.is_failure
+
+        # Now publish completion events to transition to completed state
+        await app.publish(Message1CompletedSuccessfully(), headers={"correlation_id": message1_id})
+        await app.publish(Message2CompletedSuccessfully(), headers={"correlation_id": message2_id})
+        await anyio.sleep(0.5)
+
+        # Poll again to verify they're now completed
+        result1_completed = await poller.poll(message1_id)
+        result2_completed = await poller.poll(message2_id)
+
+        assert result1_completed
+        assert result1_completed.is_success
+        assert result1_completed.status == "completed"
+        assert not result1_completed.is_accepted
+        assert not result1_completed.is_failure
+
+        assert result2_completed
+        assert result2_completed.is_success
+        assert result2_completed.status == "completed"
+        assert not result2_completed.is_accepted
+        assert not result2_completed.is_failure
+
+        await app.stop()

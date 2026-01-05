@@ -5,7 +5,7 @@ from anyio import fail_after
 
 from mersal.exceptions import MersalExceptionError
 
-from .poller import Poller, PollingResult, ProblemDetails
+from .poller import Poller, PollingResult, PollingStatus, ProblemDetails
 
 __all__ = (
     "PollerWithTimeout",
@@ -37,8 +37,9 @@ class PollerWithTimeout(Poller):
     async def push(
         self,
         message_id: uuid.UUID,
+        status: PollingStatus = "completed",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,
     ) -> None:
         """Delegate push to underlying poller."""
-        await self._poller.push(message_id, data, problem)
+        await self._poller.push(message_id, status, data, problem)

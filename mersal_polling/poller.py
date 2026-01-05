@@ -1,11 +1,14 @@
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 __all__ = (
     "Poller",
     "PollingResult",
+    "PollingStatus",
     "ProblemDetails",
 )
+
+PollingStatus = Literal["accepted", "completed", "failed"]
 
 
 @dataclass
@@ -38,23 +41,30 @@ class PollingResult:
 
     Args:
         message_id: The ID of the message being polled
+        status: The status of the operation (accepted, completed, failed)
         data: Success data (for batch operations, rich results, etc.)
         problem: Structured error information (RFC 7807) for any failure
     """
 
     message_id: Any
+    status: PollingStatus = "completed"
     data: dict[str, Any] | None = None
     problem: ProblemDetails | None = None
 
     @property
+    def is_accepted(self) -> bool:
+        """Returns True if the operation has been accepted for processing."""
+        return self.status == "accepted"
+
+    @property
     def is_success(self) -> bool:
         """Returns True if the operation completed successfully."""
-        return self.problem is None
+        return self.status == "completed" and self.problem is None
 
     @property
     def is_failure(self) -> bool:
         """Returns True if the operation failed."""
-        return self.problem is not None
+        return self.status == "failed" or self.problem is not None
 
 
 class Poller(Protocol):
@@ -93,6 +103,7 @@ class Poller(Protocol):
     async def push(
         self,
         message_id: Any,
+        status: PollingStatus = "completed",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,
     ) -> None:
@@ -100,6 +111,7 @@ class Poller(Protocol):
 
         Args:
             message_id: The ID of the message
+            status: The status of the operation (accepted, completed, failed)
             data: Success data (for rich results, batch operations)
             problem: Structured error information (RFC 7807) for failures
         """

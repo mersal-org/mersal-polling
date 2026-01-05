@@ -7,6 +7,7 @@ from mersal_polling.plugin import PollingPlugin
 from mersal_polling.poller import Poller, ProblemDetails
 
 __all__ = (
+    "AcceptedCorrelation",
     "FailedCompletionCorrelation",
     "PollingConfig",
     "SuccessfulCompletionCorrelation",
@@ -14,6 +15,22 @@ __all__ = (
 
 
 EventType = TypeVar("EventType")
+
+
+@dataclass
+class AcceptedCorrelation(Generic[EventType]):
+    """Correlates an event with the acceptance of a message (HTTP 202 semantics).
+
+    The correlation is either based on a custom callback that is given the event
+    and should return the message id or by default; the correlation id will be used.
+
+    Args:
+        message_id_getter: Callback to extract message ID from the event
+        data_builder: Callback to build acceptance data from the event
+    """
+
+    message_id_getter: Callable[[EventType], Any] | None = None
+    data_builder: Callable[[EventType], dict[str, Any]] | None = None
 
 
 @dataclass
@@ -54,6 +71,7 @@ class PollingConfig:
 
     Args:
         poller: The poller instance to use
+        accepted_events_map: Map of event types to acceptance correlations (HTTP 202 semantics)
         successful_completion_events_map: Map of event types to successful completion correlations
         failed_completion_events_map: Map of event types to failed completion correlations
         auto_publish_completion_events: Whether to automatically publish message completion events
@@ -61,6 +79,7 @@ class PollingConfig:
     """
 
     poller: Poller
+    accepted_events_map: dict[type, AcceptedCorrelation] = field(default_factory=dict)
     successful_completion_events_map: dict[type, SuccessfulCompletionCorrelation] = field(default_factory=dict)
     failed_completion_events_map: dict[type, FailedCompletionCorrelation] = field(default_factory=dict)
     auto_publish_completion_events: bool = True

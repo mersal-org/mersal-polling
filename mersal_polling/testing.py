@@ -6,7 +6,7 @@ This module provides test doubles and utilities for testing code that uses polli
 import uuid
 from typing import Any
 
-from .poller import Poller, PollingResult, ProblemDetails
+from .poller import Poller, PollingResult, PollingStatus, ProblemDetails
 
 __all__ = ("PollerTestDouble",)
 
@@ -94,6 +94,7 @@ class PollerTestDouble(Poller):
     def stub_result(
         self,
         message_id: uuid.UUID,
+        status: PollingStatus = "completed",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,
     ) -> None:
@@ -101,14 +102,25 @@ class PollerTestDouble(Poller):
 
         Args:
             message_id: The message ID to stub the result for
+            status: The status of the operation (accepted, completed, failed)
             data: Optional success data
             problem: Optional Problem Details for failures
         """
         self._stubbed_results[message_id] = PollingResult(
             message_id=message_id,
+            status=status,
             data=data,
             problem=problem,
         )
+
+    def stub_accepted(self, message_id: uuid.UUID, data: dict[str, Any] | None = None) -> None:
+        """Convenience method to stub an accepted result (HTTP 202 semantics).
+
+        Args:
+            message_id: The message ID
+            data: Optional acceptance data
+        """
+        self.stub_result(message_id, status="accepted", data=data)
 
     def stub_success(self, message_id: uuid.UUID, data: dict[str, Any] | None = None) -> None:
         """Convenience method to stub a successful result.
@@ -130,7 +142,7 @@ class PollerTestDouble(Poller):
             message_id: The message ID
             problem: Problem Details describing the failure
         """
-        self.stub_result(message_id, problem=problem)
+        self.stub_result(message_id, status="failed", problem=problem)
 
     async def poll(self, message_id: uuid.UUID) -> PollingResult:
         """Return the stubbed result and record the call.
@@ -173,6 +185,7 @@ class PollerTestDouble(Poller):
     async def push(
         self,
         message_id: uuid.UUID,
+        status: PollingStatus = "completed",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,
     ) -> None:
@@ -180,12 +193,14 @@ class PollerTestDouble(Poller):
 
         Args:
             message_id: The message ID
+            status: The status of the operation (accepted, completed, failed)
             data: Optional success data
             problem: Optional Problem Details
         """
         self.push_count += 1
         call_info = {
             "message_id": message_id,
+            "status": status,
             "data": data,
             "problem": problem,
         }
@@ -193,7 +208,7 @@ class PollerTestDouble(Poller):
         self.all_push_calls.append(call_info)
 
         # Also store as a stubbed result so peek/poll can retrieve it
-        self.stub_result(message_id, data, problem)
+        self.stub_result(message_id, status, data, problem)
 
     def reset(self) -> None:
         """Reset all stubbed results and recorded calls."""

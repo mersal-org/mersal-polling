@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from mersal.configuration import StandardConfigurator
     from mersal.pipeline.message_context import MessageContext
     from mersal_polling.config import (
+        AcceptedCorrelation,
         FailedCompletionCorrelation,
         PollingConfig,
         SuccessfulCompletionCorrelation,
@@ -42,6 +43,7 @@ class PollingPlugin(Plugin):
             config: The configuration for the polling plugin
         """
         self._poller = config.poller
+        self._accepted_events_map = config.accepted_events_map
         self._successfull_completion_events_map = config.successful_completion_events_map
         self._failed_completion_events_map = config.failed_completion_events_map
         self._auto_publish_completion_events = config.auto_publish_completion_events
@@ -80,6 +82,10 @@ class PollingPlugin(Plugin):
             ]
             lifespan_handler: LifespanHandler = configurator.get(LifespanHandler)  # type: ignore[type-abstract]
             app: Mersal = configurator.mersal
+
+            # Add all custom acceptance events
+            for event in self._accepted_events_map:
+                events_to_subscribe_to.append(event)
 
             # Add all custom completion events
             for event in self._successfull_completion_events_map:
@@ -122,6 +128,18 @@ class PollingPlugin(Plugin):
                 MessageCompletedEvent,
                 lambda __, _: self._message_completed_event_handler,
             )
+
+            # Register handlers for custom acceptance events
+            for (
+                event_type,
+                accepted_correlator,
+            ) in self._accepted_events_map.items():
+                activator.register(
+                    event_type,
+                    lambda message_context,  # type: ignore[misc]
+                    _,
+                    ac=accepted_correlator: self._accepted_event_handler_factory(ac, message_context),
+                )
 
             # Register handlers for custom success completion events
             for (
@@ -175,6 +193,35 @@ class PollingPlugin(Plugin):
         """
         await self._poller.push(event.completed_message_id)
 
+    def _accepted_event_handler_factory(
+        self,
+        correlator: AcceptedCorrelation,
+        message_context: MessageContext,
+    ) -> Callable[[Any], Awaitable[None]]:
+        """Create a handler for custom acceptance events.
+
+        Args:
+            correlator: The correlation configuration
+            message_context: The message context
+
+        Returns:
+            A handler function that processes the event
+        """
+
+        async def _accepted_event_handler(event: Any) -> None:
+            if message_id_getter := correlator.message_id_getter:
+                message_id = message_id_getter(event)
+            else:
+                message_id = message_context.headers.correlation_id
+
+            data = None
+            if data_builder := correlator.data_builder:
+                data = data_builder(event)
+
+            await self._poller.push(message_id, status="accepted", data=data)
+
+        return _accepted_event_handler
+
     def _successfull_custom_completion_event_handler_factory(
         self,
         correlator: SuccessfulCompletionCorrelation,
@@ -200,7 +247,7 @@ class PollingPlugin(Plugin):
             if data_builder := correlator.data_builder:
                 data = data_builder(event)
 
-            await self._poller.push(message_id, data=data)
+            await self._poller.push(message_id, status="completed", data=data)
 
         return _custom_completion_event_handler
 
@@ -227,7 +274,7 @@ class PollingPlugin(Plugin):
             if problem_builder := correlator.problem_builder:
                 problem = problem_builder(event)
 
-            await self._poller.push(message_id, problem=problem)
+            await self._poller.push(message_id, status="failed", problem=problem)
 
         return _custom_completion_event_handler
 

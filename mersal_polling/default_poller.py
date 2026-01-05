@@ -3,7 +3,7 @@ from typing import Any
 
 from anyio import Event
 
-from .poller import Poller, PollingResult, ProblemDetails
+from .poller import Poller, PollingResult, PollingStatus, ProblemDetails
 
 __all__ = ("DefaultPoller",)
 
@@ -42,12 +42,14 @@ class DefaultPoller(Poller):
     async def push(
         self,
         message_id: uuid.UUID,
+        status: PollingStatus = "completed",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,
     ) -> None:
         # Store the result
         self.results[message_id] = PollingResult(
             message_id=message_id,
+            status=status,
             data=data,
             problem=problem,
         )

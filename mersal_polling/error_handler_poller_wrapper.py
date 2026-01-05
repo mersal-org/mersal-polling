@@ -77,4 +77,4 @@ class ErrorHandlerPollerWrapper(ErrorHandler):
         problem = self.problem_factory(exception, message)
 
         # Notify the poller with the structured error
-        await self.poller.push(message.headers.message_id, problem=problem)
+        await self.poller.push(message.headers.message_id, status="failed", problem=problem)
