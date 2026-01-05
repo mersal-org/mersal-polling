@@ -8,7 +8,7 @@ __all__ = (
     "ProblemDetails",
 )
 
-PollingStatus = Literal["accepted", "completed", "failed"]
+PollingStatus = Literal["accepted", "succeeded", "failed"]
 
 
 @dataclass
@@ -41,13 +41,13 @@ class PollingResult:
 
     Args:
         message_id: The ID of the message being polled
-        status: The status of the operation (accepted, completed, failed)
+        status: The status of the operation (accepted, succeeded, failed)
         data: Success data (for batch operations, rich results, etc.)
         problem: Structured error information (RFC 7807) for any failure
     """
 
     message_id: Any
-    status: PollingStatus = "completed"
+    status: PollingStatus = "succeeded"
     data: dict[str, Any] | None = None
     problem: ProblemDetails | None = None
 
@@ -59,7 +59,7 @@ class PollingResult:
     @property
     def is_success(self) -> bool:
         """Returns True if the operation completed successfully."""
-        return self.status == "completed" and self.problem is None
+        return self.status == "succeeded" and self.problem is None
 
     @property
     def is_failure(self) -> bool:
@@ -73,20 +73,30 @@ class Poller(Protocol):
     Implementations can be in-memory (DefaultPoller) or distributed (DatabasePoller).
     """
 
-    async def poll(self, message_id: Any) -> PollingResult:
+    async def poll(
+        self,
+        message_id: Any,
+        exclude_statuses: list[PollingStatus] | None = None,
+    ) -> PollingResult:
         """Wait for and return the result of a message processing.
 
-        This method blocks until the result is available.
+        This method blocks until the result is available and matches the filter criteria.
 
         Args:
             message_id: The ID of the message to poll for
+            exclude_statuses: Optional list of statuses to exclude from results.
+                If the current status is in this list, poll will wait for an update.
 
         Returns:
             The polling result
         """
         ...
 
-    async def peek(self, message_id: Any) -> PollingResult | None:
+    async def peek(
+        self,
+        message_id: Any,
+        exclude_statuses: list[PollingStatus] | None = None,
+    ) -> PollingResult | None:
         """Check if a result exists without blocking.
 
         This method returns immediately, either with a result or None.
@@ -94,16 +104,18 @@ class Poller(Protocol):
 
         Args:
             message_id: The ID of the message to check
+            exclude_statuses: Optional list of statuses to exclude from results.
+                If the current status is in this list, None is returned.
 
         Returns:
-            The polling result if available, None otherwise
+            The polling result if available and not excluded, None otherwise
         """
         ...
 
     async def push(
         self,
         message_id: Any,
-        status: PollingStatus = "completed",
+        status: PollingStatus = "succeeded",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,
     ) -> None:
@@ -111,7 +123,7 @@ class Poller(Protocol):
 
         Args:
             message_id: The ID of the message
-            status: The status of the operation (accepted, completed, failed)
+            status: The status of the operation (accepted, succeeded, failed)
             data: Success data (for rich results, batch operations)
             problem: Structured error information (RFC 7807) for failures
         """

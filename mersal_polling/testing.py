@@ -94,7 +94,7 @@ class PollerTestDouble(Poller):
     def stub_result(
         self,
         message_id: uuid.UUID,
-        status: PollingStatus = "completed",
+        status: PollingStatus = "succeeded",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,
     ) -> None:
@@ -102,7 +102,7 @@ class PollerTestDouble(Poller):
 
         Args:
             message_id: The message ID to stub the result for
-            status: The status of the operation (accepted, completed, failed)
+            status: The status of the operation (accepted, succeeded, failed)
             data: Optional success data
             problem: Optional Problem Details for failures
         """
@@ -144,11 +144,16 @@ class PollerTestDouble(Poller):
         """
         self.stub_result(message_id, status="failed", problem=problem)
 
-    async def poll(self, message_id: uuid.UUID) -> PollingResult:
+    async def poll(
+        self,
+        message_id: uuid.UUID,
+        exclude_statuses: list[PollingStatus] | None = None,
+    ) -> PollingResult:
         """Return the stubbed result and record the call.
 
         Args:
             message_id: The message ID to poll for
+            exclude_statuses: Optional list of statuses to exclude from results
 
         Returns:
             The stubbed polling result
@@ -165,13 +170,25 @@ class PollerTestDouble(Poller):
                 f"No result stubbed for message {message_id}. "
                 f"Use stub_result() or stub_success()/stub_failure() to configure expected results."
             )
-        return self._stubbed_results[message_id]
 
-    async def peek(self, message_id: uuid.UUID) -> PollingResult | None:
+        message = self._stubbed_results[message_id]
+        if exclude_statuses and message.status in exclude_statuses:
+            raise KeyError(
+                f"Result for message {message_id} has status '{message.status}' "
+                f"which is in the excluded statuses list: {exclude_statuses}"
+            )
+        return message
+
+    async def peek(
+        self,
+        message_id: uuid.UUID,
+        exclude_statuses: list[PollingStatus] | None = None,
+    ) -> PollingResult | None:
         """Return the stubbed result if available and record the call.
 
         Args:
             message_id: The message ID to check
+            exclude_statuses: Optional list of statuses to exclude from results
 
         Returns:
             The stubbed result if configured, None otherwise
@@ -180,12 +197,15 @@ class PollerTestDouble(Poller):
         self.last_peek_message_id = message_id
         self.all_peek_calls.append(message_id)
 
-        return self._stubbed_results.get(message_id)
+        message = self._stubbed_results.get(message_id)
+        if message and exclude_statuses and message.status in exclude_statuses:
+            return None
+        return message
 
     async def push(
         self,
         message_id: uuid.UUID,
-        status: PollingStatus = "completed",
+        status: PollingStatus = "succeeded",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,
     ) -> None:
@@ -193,7 +213,7 @@ class PollerTestDouble(Poller):
 
         Args:
             message_id: The message ID
-            status: The status of the operation (accepted, completed, failed)
+            status: The status of the operation (accepted, succeeded, failed)
             data: Optional success data
             problem: Optional Problem Details
         """

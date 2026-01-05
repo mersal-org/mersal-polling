@@ -489,13 +489,13 @@ class TestPollingPlugin:
 
         assert result1_completed
         assert result1_completed.is_success
-        assert result1_completed.status == "completed"
+        assert result1_completed.status == "succeeded"
         assert not result1_completed.is_accepted
         assert not result1_completed.is_failure
 
         assert result2_completed
         assert result2_completed.is_success
-        assert result2_completed.status == "completed"
+        assert result2_completed.status == "succeeded"
         assert not result2_completed.is_accepted
         assert not result2_completed.is_failure
 

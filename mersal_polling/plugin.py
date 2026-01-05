@@ -247,7 +247,7 @@ class PollingPlugin(Plugin):
             if data_builder := correlator.data_builder:
                 data = data_builder(event)
 
-            await self._poller.push(message_id, status="completed", data=data)
+            await self._poller.push(message_id, status="succeeded", data=data)
 
         return _custom_completion_event_handler
 
