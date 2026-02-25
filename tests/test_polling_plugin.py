@@ -18,6 +18,7 @@ from mersal.pipeline import MessageContext
 from mersal.serialization.serializers import Serializer
 from mersal.transport.in_memory import InMemoryTransport
 from mersal_polling import (
+    REPLY_TO_HEADER,
     DefaultPoller,
     PollerWithTimeout,
     PollingConfig,
@@ -152,7 +153,10 @@ class TestPollingPlugin:
 
         await anyio.sleep(0.5)
 
-        await app.send_local(Message1(), headers={"message_id": message1_id})
+        await app.send_local(
+            Message1(),
+            headers={"message_id": message1_id, REPLY_TO_HEADER: app.transport.address},
+        )
 
         await anyio.sleep(0.5)
 
@@ -165,10 +169,59 @@ class TestPollingPlugin:
         assert result
         assert result.is_success
 
-        await app.send_local(Message1(), headers={"message_id": uuid.uuid4()})
+        await app.send_local(
+            Message1(),
+            headers={"message_id": uuid.uuid4(), REPLY_TO_HEADER: app.transport.address},
+        )
         await anyio.sleep(0.5)
         assert message_handler.count == 2
         assert completion_event_handler.count == 2
+
+        await app.stop()
+
+    async def test_polling_with_reply_to(
+        self,
+        in_memory_transport: InMemoryTransport,
+        in_memory_subscription_storage: InMemorySubscriptionStorage,
+        serializer: Serializer,
+    ):
+        """When reply_to is set, the completion event is sent directly to that
+        address instead of being broadcast to all subscribers.
+        """
+        activator = BuiltinHandlerActivator()
+        poller = DefaultPoller()
+        activator.register(Message1, lambda __, _: MessageHandler())
+        message1_id = uuid.uuid4()
+
+        app = Mersal(
+            "m1",
+            activator,
+            transport=in_memory_transport,
+            serializer=serializer,
+            subscription_storage=in_memory_subscription_storage,
+            autosubscribe=AutosubscribeConfig(set()),
+            plugins=[
+                PollingConfig(
+                    poller,
+                    auto_publish_completion_events=True,
+                ).plugin
+            ],
+        )
+        await app.start()
+        await anyio.sleep(0.1)
+
+        await app.send_local(
+            Message1(),
+            headers={
+                "message_id": message1_id,
+                REPLY_TO_HEADER: app.transport.address,
+            },
+        )
+        await anyio.sleep(0.5)
+
+        result = await poller.poll(message1_id)
+        assert result
+        assert result.is_success
 
         await app.stop()
 

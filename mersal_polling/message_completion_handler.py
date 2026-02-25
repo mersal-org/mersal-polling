@@ -14,9 +14,12 @@ if TYPE_CHECKING:
     from mersal.types import AsyncAnyCallable
 
 __all__ = (
+    "REPLY_TO_HEADER",
     "message_completion_event_publisher",
     "register_message_completion_publishers",
 )
+
+REPLY_TO_HEADER = "reply_to"
 
 
 def message_completion_event_publisher(
@@ -29,6 +32,10 @@ def message_completion_event_publisher(
     This function creates a message handler that publishes a MessageCompletedEvent
     when invoked, allowing for tracking message processing completion.
 
+    If the incoming message carries a ``reply_to`` header, the completion event
+    is sent directly to that address instead of being broadcast to all
+    subscribers, avoiding unnecessary fan-out across unrelated apps.
+
     Args:
         message_context: The message context for the current message
         app: The Mersal application instance
@@ -39,17 +46,14 @@ def message_completion_event_publisher(
     """
 
     async def handler(_: Any) -> None:
-        """Handler that publishes a MessageCompletedEvent.
-
-        Args:
-            _: The message (not used in this handler)
-        """
         completed_message_id = message_context.headers.message_id
         published_message_id = uuid.uuid4()
-        await app.publish(
-            MessageCompletedEvent(completed_message_id=completed_message_id),
-            headers={"message_id": published_message_id},
-        )
+        event = MessageCompletedEvent(completed_message_id=completed_message_id)
+        event_headers = {"message_id": published_message_id}
+
+        reply_to = message_context.headers.get(REPLY_TO_HEADER)
+        if reply_to:
+            await app.send(event, headers=event_headers, addresses=[reply_to])
 
     return handler
 

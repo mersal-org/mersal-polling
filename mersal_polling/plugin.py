@@ -77,9 +77,7 @@ class PollingPlugin(Plugin):
         """
 
         def decorate(configurator: StandardConfigurator) -> Any:
-            events_to_subscribe_to: list[type] = [
-                MessageCompletedEvent,
-            ]
+            events_to_subscribe_to: list[type] = []
             lifespan_handler: LifespanHandler = configurator.get(LifespanHandler)  # type: ignore[type-abstract]
             app: Mersal = configurator.mersal
 
