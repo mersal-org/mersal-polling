@@ -103,9 +103,13 @@ class SlowHandler:
         await anyio.sleep(self.delay)
 
 
+class HandlerError(Exception):
+    """Custom error."""
+
+
 class ThrowingMessageHandler:
     async def __call__(self, message: Any):
-        raise Exception()
+        raise HandlerError()
 
 
 class MessageHandlerThatPublishes:

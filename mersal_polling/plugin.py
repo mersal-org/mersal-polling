@@ -77,19 +77,15 @@ class PollingPlugin(Plugin):
         """
 
         def decorate(configurator: StandardConfigurator) -> Any:
-            events_to_subscribe_to: list[type] = []
             lifespan_handler: LifespanHandler = configurator.get(LifespanHandler)  # type: ignore[type-abstract]
             app: Mersal = configurator.mersal
 
             # Add all custom acceptance events
-            for event in self._accepted_events_map:
-                events_to_subscribe_to.append(event)
-
-            # Add all custom completion events
-            for event in self._successfull_completion_events_map:
-                events_to_subscribe_to.append(event)
-            for event in self._failed_completion_events_map:
-                events_to_subscribe_to.append(event)
+            events_to_subscribe_to: list[type] = [
+                *list(self._accepted_events_map.keys()),
+                *list(self._successfull_completion_events_map.keys()),
+                *list(self._failed_completion_events_map.keys()),
+            ]
 
             # Register a startup hook to subscribe to all events
             lifespan_handler.register_on_startup_hook(self._subscribe(app, events_to_subscribe_to))
