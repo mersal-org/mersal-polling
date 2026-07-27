@@ -53,7 +53,7 @@ def message_completion_event_publisher(
 
         reply_to = message_context.headers.get(REPLY_TO_HEADER)
         if reply_to:
-            await app.send(event, headers=event_headers, addresses=[reply_to])
+            await app.send(event, headers=event_headers, addresses={reply_to})
 
     return handler
 

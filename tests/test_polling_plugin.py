@@ -464,7 +464,7 @@ class TestPollingPlugin:
 
         _poller = PollerWithTimeout(poller)
         with pytest.raises(PollingTimeoutError):
-            _ = await _poller.poll(message_id, 1)
+            _ = await _poller.poll(message_id, timeout=1)
 
     async def test_polling_with_accepted_events(
         self,

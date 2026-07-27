@@ -26,8 +26,9 @@ class PollerWithTimeout(Poller):
     async def poll(
         self,
         message_id: uuid.UUID,
-        timeout: float = 30,
         exclude_statuses: list[PollingStatus] | None = None,
+        *,
+        timeout: float = 30,
     ) -> PollingResult:
         try:
             with fail_after(timeout):

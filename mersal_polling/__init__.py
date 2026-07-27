@@ -1,3 +1,5 @@
+from importlib.metadata import version
+
 from .config import (
     AcceptedCorrelation,
     FailedCompletionCorrelation,
@@ -31,3 +33,11 @@ __all__ = [
     "message_completion_event_publisher",
     "register_message_completion_publishers",
 ]
+
+
+def __getattr__(name: str) -> str:
+    if name != "__version__":
+        msg = f"module {__name__!r} has no attribute {name!r}"
+        raise AttributeError(msg)
+
+    return version("mersal_polling")

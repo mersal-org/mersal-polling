@@ -92,7 +92,7 @@ class PollingPlugin(Plugin):
                 events_to_subscribe_to.append(event)
 
             # Register a startup hook to subscribe to all events
-            lifespan_handler.register_on_startup_hook(self._subscribe(app, events_to_subscribe_to))  # type: ignore[arg-type]
+            lifespan_handler.register_on_startup_hook(self._subscribe(app, events_to_subscribe_to))
 
             return lifespan_handler
 
@@ -276,7 +276,7 @@ class PollingPlugin(Plugin):
 
         return _custom_completion_event_handler
 
-    def _subscribe(self, app: Mersal, events: list[type]) -> Callable[[list[type]], Awaitable[None]]:
+    def _subscribe(self, app: Mersal, events: list[type]) -> Callable[[], Awaitable[None]]:
         """Create a function that subscribes to the given events.
 
         Args:
