@@ -167,9 +167,9 @@ class TestPollingPlugin:
         assert message_handler.count == 1
         assert completion_event_handler.count == 1
         assert isinstance(completion_event_handler.message, MessageCompletedEvent)
-        assert completion_event_handler.message.completed_message_id == message1_id
+        assert completion_event_handler.message.completed_message_id == str(message1_id)
 
-        result = await poller.poll(message1_id)
+        result = await poller.poll(str(message1_id))
         assert result
         assert result.is_success
 
@@ -223,7 +223,7 @@ class TestPollingPlugin:
         )
         await anyio.sleep(0.5)
 
-        result = await poller.poll(message1_id)
+        result = await poller.poll(str(message1_id))
         assert result
         assert result.is_success
 
@@ -273,8 +273,8 @@ class TestPollingPlugin:
         await app.send_local(Message1(), headers={"message_id": message1_id})
         await app.send_local(Message2(), headers={"message_id": message2_id})
         await anyio.sleep(0.5)
-        result1 = await poller.poll(message1_id)
-        result2 = await poller.poll(message2_id)
+        result1 = await poller.poll(str(message1_id))
+        result2 = await poller.poll(str(message2_id))
         assert result1
         assert result1.is_success
         assert result2
@@ -341,8 +341,8 @@ class TestPollingPlugin:
         await app.send_local(Message2(), headers={"message_id": message2_id})
         await anyio.sleep(0.5)
 
-        result1 = await poller.poll(message1_id)
-        result2 = await poller.poll(message2_id)
+        result1 = await poller.poll(str(message1_id))
+        result2 = await poller.poll(str(message2_id))
 
         assert result1
         assert result1.is_failure
@@ -383,7 +383,7 @@ class TestPollingPlugin:
 
         await app.send_local(Message1(), headers={"message_id": message_id})
         await anyio.sleep(0.1)
-        result = await poller.poll(message_id)
+        result = await poller.poll(str(message_id))
         assert result
         assert result.is_failure
         assert result.problem is not None
@@ -417,7 +417,7 @@ class TestPollingPlugin:
 
         await app.send_local(Message1(), headers={"message_id": message_id})
         with pytest.raises(PollingTimeoutError):
-            await poller.poll(message_id, timeout=0.5)
+            await poller.poll(str(message_id), timeout=0.5)
 
         await app.stop()
 
@@ -468,7 +468,7 @@ class TestPollingPlugin:
 
         _poller = PollerWithTimeout(poller)
         with pytest.raises(PollingTimeoutError):
-            _ = await _poller.poll(message_id, timeout=1)
+            _ = await _poller.poll(str(message_id), timeout=1)
 
     async def test_polling_with_accepted_events(
         self,
@@ -520,8 +520,8 @@ class TestPollingPlugin:
         await anyio.sleep(0.5)
 
         # Poll for accepted state
-        result1 = await poller.poll(message1_id)
-        result2 = await poller.poll(message2_id)
+        result1 = await poller.poll(str(message1_id))
+        result2 = await poller.poll(str(message2_id))
 
         assert result1
         assert result1.is_accepted
@@ -541,8 +541,8 @@ class TestPollingPlugin:
         await anyio.sleep(0.5)
 
         # Poll again to verify they're now completed
-        result1_completed = await poller.poll(message1_id)
-        result2_completed = await poller.poll(message2_id)
+        result1_completed = await poller.poll(str(message1_id))
+        result2_completed = await poller.poll(str(message2_id))
 
         assert result1_completed
         assert result1_completed.is_success

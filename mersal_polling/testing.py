@@ -3,7 +3,6 @@
 This module provides test doubles and utilities for testing code that uses polling.
 """
 
-import uuid
 from typing import Any
 
 from .poller import Poller, PollingResult, PollingStatus, ProblemDetails
@@ -20,7 +19,7 @@ class PollerTestDouble(Poller):
 
     Example - Stubbing Success:
         >>> poller = PollerTestDouble()
-        >>> message_id = uuid.uuid4()
+        >>> message_id = str(uuid.uuid4())
         >>>
         >>> # Pre-configure a successful result
         >>> poller.stub_success(message_id, data={"batch_id": "123", "succeeded": 100, "failed": 5})
@@ -31,7 +30,7 @@ class PollerTestDouble(Poller):
 
     Example - Stubbing Failure:
         >>> poller = PollerTestDouble()
-        >>> message_id = uuid.uuid4()
+        >>> message_id = str(uuid.uuid4())
         >>>
         >>> # Pre-configure a failure result
         >>> poller.stub_failure(
@@ -59,7 +58,7 @@ class PollerTestDouble(Poller):
 
     Example - Combined:
         >>> poller = PollerTestDouble()
-        >>> message_id = uuid.uuid4()
+        >>> message_id = str(uuid.uuid4())
         >>>
         >>> # Stub what poll should return
         >>> poller.stub_result(message_id, data={"status": "complete"})
@@ -74,7 +73,7 @@ class PollerTestDouble(Poller):
 
     def __init__(self) -> None:
         # Storage for stubbed results
-        self._stubbed_results: dict[uuid.UUID, PollingResult] = {}
+        self._stubbed_results: dict[str, PollingResult] = {}
 
         # Default behavior for unstubbed messages
         self._default_status: PollingStatus | None = None
@@ -87,18 +86,18 @@ class PollerTestDouble(Poller):
         self.push_count: int = 0
 
         # Last call tracking
-        self.last_poll_message_id: uuid.UUID | None = None
-        self.last_peek_message_id: uuid.UUID | None = None
+        self.last_poll_message_id: str | None = None
+        self.last_peek_message_id: str | None = None
         self.last_push: dict[str, Any] | None = None
 
         # All calls tracking
-        self.all_poll_calls: list[uuid.UUID] = []
-        self.all_peek_calls: list[uuid.UUID] = []
+        self.all_poll_calls: list[str] = []
+        self.all_peek_calls: list[str] = []
         self.all_push_calls: list[dict[str, Any]] = []
 
     def stub_result(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         status: PollingStatus = "succeeded",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,
@@ -118,7 +117,7 @@ class PollerTestDouble(Poller):
             problem=problem,
         )
 
-    def stub_accepted(self, message_id: uuid.UUID, data: dict[str, Any] | None = None) -> None:
+    def stub_accepted(self, message_id: str, data: dict[str, Any] | None = None) -> None:
         """Convenience method to stub an accepted result (HTTP 202 semantics).
 
         Args:
@@ -127,7 +126,7 @@ class PollerTestDouble(Poller):
         """
         self.stub_result(message_id, status="accepted", data=data)
 
-    def stub_success(self, message_id: uuid.UUID, data: dict[str, Any] | None = None) -> None:
+    def stub_success(self, message_id: str, data: dict[str, Any] | None = None) -> None:
         """Convenience method to stub a successful result.
 
         Args:
@@ -138,7 +137,7 @@ class PollerTestDouble(Poller):
 
     def stub_failure(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         problem: ProblemDetails,
     ) -> None:
         """Convenience method to stub a failure result.
@@ -190,7 +189,7 @@ class PollerTestDouble(Poller):
 
     async def poll(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         exclude_statuses: list[PollingStatus] | None = None,
     ) -> PollingResult:
         """Return the stubbed result and record the call.
@@ -234,7 +233,7 @@ class PollerTestDouble(Poller):
 
     async def peek(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         exclude_statuses: list[PollingStatus] | None = None,
     ) -> PollingResult | None:
         """Return the stubbed result if available and record the call.
@@ -265,7 +264,7 @@ class PollerTestDouble(Poller):
 
     async def push(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         status: PollingStatus = "succeeded",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,
@@ -307,7 +306,7 @@ class PollerTestDouble(Poller):
         self.all_peek_calls.clear()
         self.all_push_calls.clear()
 
-    def was_polled(self, message_id: uuid.UUID) -> bool:
+    def was_polled(self, message_id: str) -> bool:
         """Check if a specific message ID was polled.
 
         Args:
@@ -318,7 +317,7 @@ class PollerTestDouble(Poller):
         """
         return message_id in self.all_poll_calls
 
-    def was_pushed(self, message_id: uuid.UUID) -> bool:
+    def was_pushed(self, message_id: str) -> bool:
         """Check if a result was pushed for a specific message ID.
 
         Args:
@@ -367,7 +366,7 @@ class PollerSpy(Poller):
 
     async def poll(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         exclude_statuses: list[PollingStatus] | None = None,
     ) -> PollingResult:
         """Delegate to the wrapped poller.
@@ -383,7 +382,7 @@ class PollerSpy(Poller):
 
     async def peek(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         exclude_statuses: list[PollingStatus] | None = None,
     ) -> PollingResult | None:
         """Delegate to the wrapped poller.
@@ -399,7 +398,7 @@ class PollerSpy(Poller):
 
     async def push(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         status: PollingStatus = "succeeded",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,
@@ -426,7 +425,7 @@ class PollerSpy(Poller):
         # Delegate to wrapped poller
         await self._wrapped.push(message_id, status, data, problem)
 
-    def was_pushed(self, message_id: uuid.UUID) -> bool:
+    def was_pushed(self, message_id: str) -> bool:
         """Check if a result was pushed for a specific message ID.
 
         Args:

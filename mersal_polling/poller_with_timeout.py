@@ -1,4 +1,3 @@
-import uuid
 from typing import Any
 
 from anyio import fail_after
@@ -25,7 +24,7 @@ class PollerWithTimeout(Poller):
 
     async def poll(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         exclude_statuses: list[PollingStatus] | None = None,
         *,
         timeout: float = 30,
@@ -38,7 +37,7 @@ class PollerWithTimeout(Poller):
 
     async def peek(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         exclude_statuses: list[PollingStatus] | None = None,
     ) -> PollingResult | None:
         """Delegate peek to underlying poller (no timeout needed for non-blocking operation)."""
@@ -46,7 +45,7 @@ class PollerWithTimeout(Poller):
 
     async def push(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         status: PollingStatus = "succeeded",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,

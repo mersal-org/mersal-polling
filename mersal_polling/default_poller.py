@@ -1,4 +1,3 @@
-import uuid
 from typing import Any
 
 from anyio import Event
@@ -16,12 +15,12 @@ class DefaultPoller(Poller):
     """
 
     def __init__(self) -> None:
-        self.results: dict[uuid.UUID, PollingResult] = {}
-        self.events: dict[uuid.UUID, Event] = {}
+        self.results: dict[str, PollingResult] = {}
+        self.events: dict[str, Event] = {}
 
     async def poll(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         exclude_statuses: list[PollingStatus] | None = None,
     ) -> PollingResult:
         # Check if result already exists
@@ -44,7 +43,7 @@ class DefaultPoller(Poller):
 
     async def peek(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         exclude_statuses: list[PollingStatus] | None = None,
     ) -> PollingResult | None:
         """Check if a result exists without blocking."""
@@ -55,7 +54,7 @@ class DefaultPoller(Poller):
 
     async def push(
         self,
-        message_id: uuid.UUID,
+        message_id: str,
         status: PollingStatus = "succeeded",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,

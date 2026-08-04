@@ -44,7 +44,7 @@ class PollingPlugin(Plugin):
         """
         self._poller = config.poller
         self._accepted_events_map = config.accepted_events_map
-        self._successfull_completion_events_map = config.successful_completion_events_map
+        self._successful_completion_events_map = config.successful_completion_events_map
         self._failed_completion_events_map = config.failed_completion_events_map
         self._auto_publish_completion_events = config.auto_publish_completion_events
         self._exclude_from_completion_events = config.exclude_from_completion_events
@@ -83,7 +83,7 @@ class PollingPlugin(Plugin):
             # Add all custom acceptance events
             events_to_subscribe_to: list[type] = [
                 *list(self._accepted_events_map.keys()),
-                *list(self._successfull_completion_events_map.keys()),
+                *list(self._successful_completion_events_map.keys()),
                 *list(self._failed_completion_events_map.keys()),
             ]
 
@@ -139,12 +139,12 @@ class PollingPlugin(Plugin):
             for (
                 event_type,
                 success_correlator,
-            ) in self._successfull_completion_events_map.items():
+            ) in self._successful_completion_events_map.items():
                 activator.register(
                     event_type,
                     lambda message_context,  # type: ignore[misc]
                     _,
-                    sc=success_correlator: self._successfull_custom_completion_event_handler_factory(
+                    sc=success_correlator: self._successful_custom_completion_event_handler_factory(
                         sc, message_context
                     ),
                 )
@@ -212,11 +212,11 @@ class PollingPlugin(Plugin):
             if data_builder := correlator.data_builder:
                 data = data_builder(event)
 
-            await self._poller.push(message_id, status="accepted", data=data)
+            await self._poller.push(str(message_id), status="accepted", data=data)
 
         return _accepted_event_handler
 
-    def _successfull_custom_completion_event_handler_factory(
+    def _successful_custom_completion_event_handler_factory(
         self,
         correlator: SuccessfulCompletionCorrelation,
         message_context: MessageContext,
@@ -241,7 +241,7 @@ class PollingPlugin(Plugin):
             if data_builder := correlator.data_builder:
                 data = data_builder(event)
 
-            await self._poller.push(message_id, status="succeeded", data=data)
+            await self._poller.push(str(message_id), status="succeeded", data=data)
 
         return _custom_completion_event_handler
 
@@ -268,7 +268,7 @@ class PollingPlugin(Plugin):
             if problem_builder := correlator.problem_builder:
                 problem = problem_builder(event)
 
-            await self._poller.push(message_id, status="failed", problem=problem)
+            await self._poller.push(str(message_id), status="failed", problem=problem)
 
         return _custom_completion_event_handler
 

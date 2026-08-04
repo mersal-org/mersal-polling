@@ -76,5 +76,8 @@ class ErrorHandlerPollerWrapper(ErrorHandler):
         # Convert the exception to a ProblemDetails for the poller/API client
         problem = self.problem_factory(exception, message)
 
+        if message.headers.message_id is None:
+            raise RuntimeError("Message received with no message id set.")
+
         # Notify the poller with the structured error
         await self.poller.push(message.headers.message_id, status="failed", problem=problem)

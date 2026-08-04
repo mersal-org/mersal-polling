@@ -47,6 +47,8 @@ def message_completion_event_publisher(
 
     async def handler(_: Any) -> None:
         completed_message_id = message_context.headers.message_id
+        if completed_message_id is None:
+            raise RuntimeError("Received message has no message id set.")
         published_message_id = uuid.uuid4()
         event = MessageCompletedEvent(completed_message_id=completed_message_id)
         event_headers = {"message_id": published_message_id}

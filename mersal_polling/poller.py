@@ -46,7 +46,7 @@ class PollingResult:
         problem: Structured error information (RFC 7807) for any failure
     """
 
-    message_id: Any
+    message_id: str
     status: PollingStatus = "succeeded"
     data: dict[str, Any] | None = None
     problem: ProblemDetails | None = None
@@ -75,7 +75,7 @@ class Poller(Protocol):
 
     async def poll(
         self,
-        message_id: Any,
+        message_id: str,
         exclude_statuses: list[PollingStatus] | None = None,
     ) -> PollingResult:
         """Wait for and return the result of a message processing.
@@ -94,7 +94,7 @@ class Poller(Protocol):
 
     async def peek(
         self,
-        message_id: Any,
+        message_id: str,
         exclude_statuses: list[PollingStatus] | None = None,
     ) -> PollingResult | None:
         """Check if a result exists without blocking.
@@ -114,7 +114,7 @@ class Poller(Protocol):
 
     async def push(
         self,
-        message_id: Any,
+        message_id: str,
         status: PollingStatus = "succeeded",
         data: dict[str, Any] | None = None,
         problem: ProblemDetails | None = None,

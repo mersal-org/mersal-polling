@@ -80,8 +80,8 @@ run = [
 echo "{{vars.INFO}} Updating all dependencies... 🔄"
 uv lock --upgrade
 echo "{{vars.OK}} Dependencies updated 🔄"
-# uv run pre-commit autoupdate
-# echo "{{vars.OK}} Updated Pre-commit hooks 🔄"
+uv run pre-commit autoupdate
+echo "{{vars.OK}} Updated Pre-commit hooks 🔄"
 '''
 ]
 
