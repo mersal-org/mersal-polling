@@ -6,19 +6,19 @@ from mersal.activation import HandlerActivator
 from mersal.lifespan import LifespanHandler
 from mersal.messages import MessageCompletedEvent
 from mersal.plugins import Plugin
-from mersal.retry import ErrorHandler
-from mersal_polling.error_handler_poller_wrapper import (
+from mersal.polling.error_handler_poller_wrapper import (
     ErrorHandlerPollerWrapper,
 )
-from mersal_polling.message_completion_handler import register_message_completion_publishers
+from mersal.polling.message_completion_handler import register_message_completion_publishers
+from mersal.retry import ErrorHandler
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from mersal.app import Mersal
     from mersal.configuration import StandardConfigurator
+    from mersal.core.app import Mersal
     from mersal.pipeline.message_context import MessageContext
-    from mersal_polling.config import (
+    from mersal.polling.config import (
         AcceptedCorrelation,
         FailedCompletionCorrelation,
         PollingConfig,

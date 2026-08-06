@@ -1,9 +1,9 @@
 from collections.abc import Callable
 
 from mersal.messages import TransportMessage
+from mersal.polling.poller import Poller, ProblemDetails
 from mersal.retry import ErrorHandler
 from mersal.transport import TransactionContext
-from mersal_polling.poller import Poller, ProblemDetails
 
 __all__ = ("ErrorHandlerPollerWrapper",)
 

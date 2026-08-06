@@ -8,16 +8,14 @@ import pytest
 from mersal.activation import (
     BuiltinHandlerActivator,
 )
-from mersal.app import Mersal
+from mersal.core.app import Mersal
 from mersal.lifespan.autosubscribe import AutosubscribeConfig
 from mersal.messages import MessageCompletedEvent
 from mersal.persistence.in_memory import (
     InMemorySubscriptionStorage,
 )
 from mersal.pipeline import MessageContext
-from mersal.serialization.serializers import Serializer
-from mersal.transport.in_memory import InMemoryTransport
-from mersal_polling import (
+from mersal.polling import (
     REPLY_TO_HEADER,
     DefaultPoller,
     PollerWithTimeout,
@@ -25,12 +23,14 @@ from mersal_polling import (
     PollingTimeoutError,
     ProblemDetails,
 )
-from mersal_polling.config import (
+from mersal.polling.config import (
     AcceptedCorrelation,
     FailedCompletionCorrelation,
     SuccessfulCompletionCorrelation,
 )
-from mersal_testing.message_handlers.message_handler_that_counts import MessageHandlerThatCounts
+from mersal.serialization.serializers import Serializer
+from mersal.testing.core.message_handlers.message_handler_that_counts import MessageHandlerThatCounts
+from mersal.transport.in_memory import InMemoryTransport
 
 __all__ = (
     "Message1",

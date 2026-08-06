@@ -3,8 +3,8 @@ from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
 
 from mersal.messages import TransportMessage
-from mersal_polling.plugin import PollingPlugin
-from mersal_polling.poller import Poller, ProblemDetails
+from mersal.polling.plugin import PollingPlugin
+from mersal.polling.poller import Poller, ProblemDetails
 
 __all__ = (
     "AcceptedCorrelation",

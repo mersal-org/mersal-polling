@@ -1,4 +1,4 @@
-"""Testing utilities for mersal_polling.
+"""Testing utilities for mersal.polling.
 
 This module provides test doubles and utilities for testing code that uses polling.
 """

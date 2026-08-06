@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from mersal.activation import HandlerActivator
-    from mersal.app import Mersal
+    from mersal.core.app import Mersal
     from mersal.pipeline import MessageContext
     from mersal.types import AsyncAnyCallable
 
