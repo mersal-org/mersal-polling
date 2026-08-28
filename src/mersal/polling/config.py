@@ -70,7 +70,8 @@ class PollingConfig:
     """Configuration for the polling functionality.
 
     Args:
-        poller: The poller instance to use
+        poller: The poller instance to use. If not provided, it will be resolved
+            from the configurator via the `Poller` type when the plugin is applied.
         accepted_events_map: Map of event types to acceptance correlations (HTTP 202 semantics)
         successful_completion_events_map: Map of event types to successful completion correlations
         failed_completion_events_map: Map of event types to failed completion correlations
@@ -78,7 +79,7 @@ class PollingConfig:
         exclude_from_completion_events: Message types to exclude from automatic completion events
     """
 
-    poller: Poller
+    poller: Poller | None = None
     accepted_events_map: dict[type, AcceptedCorrelation] = field(default_factory=dict)
     successful_completion_events_map: dict[type, SuccessfulCompletionCorrelation] = field(default_factory=dict)
     failed_completion_events_map: dict[type, FailedCompletionCorrelation] = field(default_factory=dict)

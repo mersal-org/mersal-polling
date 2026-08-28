@@ -10,6 +10,7 @@ from mersal.polling.error_handler_poller_wrapper import (
     ErrorHandlerPollerWrapper,
 )
 from mersal.polling.message_completion_handler import register_message_completion_publishers
+from mersal.polling.poller import Poller
 from mersal.retry import ErrorHandler
 
 if TYPE_CHECKING:
@@ -42,7 +43,7 @@ class PollingPlugin(Plugin):
         Args:
             config: The configuration for the polling plugin
         """
-        self._poller = config.poller
+        self._poller: Poller | None = config.poller
         self._accepted_events_map = config.accepted_events_map
         self._successful_completion_events_map = config.successful_completion_events_map
         self._failed_completion_events_map = config.failed_completion_events_map
@@ -50,12 +51,18 @@ class PollingPlugin(Plugin):
         self._exclude_from_completion_events = config.exclude_from_completion_events
         self._problem_factory = config.problem_factory
 
+    def _resolve_poller(self, configurator: StandardConfigurator) -> Poller:
+        if self._poller is None:
+            return configurator.get(Poller)  # type: ignore[type-abstract]
+        return self._poller
+
     def __call__(self, configurator: StandardConfigurator) -> None:
         """Configure the Mersal application with polling functionality.
 
         Args:
             configurator: The standard configurator for the application
         """
+
         # Configure event subscriptions for MessageCompletedEvent and other events
         self._configure_event_subscriptions(configurator)
 
@@ -103,7 +110,9 @@ class PollingPlugin(Plugin):
 
         def decorate_error_handler(configurator: StandardConfigurator) -> Any:
             error_handler: ErrorHandler = configurator.get(ErrorHandler)  # type: ignore[type-abstract]
-            return ErrorHandlerPollerWrapper(self._poller, error_handler, problem_factory=self._problem_factory)
+            return ErrorHandlerPollerWrapper(
+                self._resolve_poller(configurator), error_handler, problem_factory=self._problem_factory
+            )
 
         configurator.decorate(ErrorHandler, decorate_error_handler)
 
@@ -117,10 +126,11 @@ class PollingPlugin(Plugin):
         def decorate_activator(configurator: StandardConfigurator) -> Any:
             activator: HandlerActivator = configurator.get(HandlerActivator)  # type: ignore[type-abstract]
 
+            poller = self._resolve_poller(configurator)
             # Register handler for MessageCompletedEvent
             activator.register(
                 MessageCompletedEvent,
-                lambda __, _: self._message_completed_event_handler,
+                lambda __, _: self._message_completed_event_handler_factory(poller),
             )
 
             # Register handlers for custom acceptance events
@@ -132,7 +142,7 @@ class PollingPlugin(Plugin):
                     event_type,
                     lambda message_context,  # type: ignore[misc]
                     _,
-                    ac=accepted_correlator: self._accepted_event_handler_factory(ac, message_context),
+                    ac=accepted_correlator: self._accepted_event_handler_factory(poller, ac, message_context),
                 )
 
             # Register handlers for custom success completion events
@@ -145,7 +155,7 @@ class PollingPlugin(Plugin):
                     lambda message_context,  # type: ignore[misc]
                     _,
                     sc=success_correlator: self._successful_custom_completion_event_handler_factory(
-                        sc, message_context
+                        poller, sc, message_context
                     ),
                 )
 
@@ -158,7 +168,9 @@ class PollingPlugin(Plugin):
                     event_type,
                     lambda message_context,  # type: ignore[misc]
                     _,
-                    fc=failure_correlator: self._failed_custom_completion_event_handler_factory(fc, message_context),
+                    fc=failure_correlator: self._failed_custom_completion_event_handler_factory(
+                        poller, fc, message_context
+                    ),
                 )
 
             return activator
@@ -179,16 +191,15 @@ class PollingPlugin(Plugin):
 
         configurator.decorate(HandlerActivator, decorate_activator)
 
-    async def _message_completed_event_handler(self, event: MessageCompletedEvent) -> None:
-        """Handle MessageCompletedEvent by updating the poller.
+    def _message_completed_event_handler_factory(self, poller: Poller) -> Callable[[Any], Awaitable[None]]:
+        async def _message_completed_event_handler(event: MessageCompletedEvent) -> None:
+            await poller.push(event.completed_message_id)
 
-        Args:
-            event: The message completed event
-        """
-        await self._poller.push(event.completed_message_id)
+        return _message_completed_event_handler
 
     def _accepted_event_handler_factory(
         self,
+        poller: Poller,
         correlator: AcceptedCorrelation,
         message_context: MessageContext,
     ) -> Callable[[Any], Awaitable[None]]:
@@ -212,12 +223,13 @@ class PollingPlugin(Plugin):
             if data_builder := correlator.data_builder:
                 data = data_builder(event)
 
-            await self._poller.push(str(message_id), status="accepted", data=data)
+            await poller.push(str(message_id), status="accepted", data=data)
 
         return _accepted_event_handler
 
     def _successful_custom_completion_event_handler_factory(
         self,
+        poller: Poller,
         correlator: SuccessfulCompletionCorrelation,
         message_context: MessageContext,
     ) -> Callable[[Any], Awaitable[None]]:
@@ -241,12 +253,12 @@ class PollingPlugin(Plugin):
             if data_builder := correlator.data_builder:
                 data = data_builder(event)
 
-            await self._poller.push(str(message_id), status="succeeded", data=data)
+            await poller.push(str(message_id), status="succeeded", data=data)
 
         return _custom_completion_event_handler
 
     def _failed_custom_completion_event_handler_factory(
-        self, correlator: FailedCompletionCorrelation, message_context: MessageContext
+        self, poller: Poller, correlator: FailedCompletionCorrelation, message_context: MessageContext
     ) -> Callable[[Any], Awaitable[None]]:
         """Create a handler for custom failure completion events.
 
@@ -268,7 +280,7 @@ class PollingPlugin(Plugin):
             if problem_builder := correlator.problem_builder:
                 problem = problem_builder(event)
 
-            await self._poller.push(str(message_id), status="failed", problem=problem)
+            await poller.push(str(message_id), status="failed", problem=problem)
 
         return _custom_completion_event_handler
 
