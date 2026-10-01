@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 from mersal.activation import HandlerActivator
 from mersal.lifespan import LifespanHandler
+from mersal.logging import Logger
 from mersal.messages import MessageCompletedEvent
 from mersal.plugins import Plugin
 from mersal.polling.error_handler_poller_wrapper import (
@@ -85,6 +86,17 @@ class PollingPlugin(Plugin):
 
         def decorate(configurator: StandardConfigurator) -> Any:
             lifespan_handler: LifespanHandler = configurator.get(LifespanHandler)  # type: ignore[type-abstract]
+
+            if configurator.send_only:
+                # A send-only app never receives, so it can't handle these events.
+                # A non-send-only app with the same address (e.g. a separate worker)
+                # subscribes and pushes the results into the shared poller. Subscribing
+                # here as well would only add startup cost (broker-side declarations on
+                # some transports) and, on transports where subscribing starts a
+                # consumer, a competing consumer that never drains its messages.
+                lifespan_handler.register_on_startup_hook(self._log_subscribe_skip(configurator))
+                return lifespan_handler
+
             app: Mersal = configurator.mersal
 
             # Add all custom acceptance events
@@ -302,3 +314,12 @@ class PollingPlugin(Plugin):
                 await app.subscribe(e)
 
         return subscribe
+
+    def _log_subscribe_skip(self, configurator: StandardConfigurator) -> Callable[[], Awaitable[None]]:
+        async def log_skip() -> None:
+            configurator.get(Logger).info(  # type: ignore[type-abstract]
+                "polling.subscribe.send_only.skip",
+                reason="app is send_only; completion events are handled by a non-send-only app",
+            )
+
+        return log_skip

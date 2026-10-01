@@ -13,6 +13,7 @@ from mersal.lifespan.autosubscribe import AutosubscribeConfig
 from mersal.messages import MessageCompletedEvent
 from mersal.persistence.in_memory import (
     InMemorySubscriptionStorage,
+    InMemorySubscriptionStore,
 )
 from mersal.pipeline import MessageContext
 from mersal.polling import (
@@ -557,3 +558,64 @@ class TestPollingPlugin:
         assert not result2_completed.is_failure
 
         await app.stop()
+
+    async def test_subscribes_to_correlated_events_on_startup(
+        self,
+        in_memory_transport: InMemoryTransport,
+        serializer: Serializer,
+    ):
+        store = InMemorySubscriptionStore()
+        app = Mersal(
+            "m1",
+            BuiltinHandlerActivator(),
+            transport=in_memory_transport,
+            serializer=serializer,
+            subscription_storage=InMemorySubscriptionStorage.centralized(store),
+            autosubscribe=AutosubscribeConfig(set()),
+            plugins=[
+                PollingConfig(
+                    DefaultPoller(),
+                    accepted_events_map={Message1Accepted: AcceptedCorrelation()},
+                    successful_completion_events_map={Message1CompletedSuccessfully: SuccessfulCompletionCorrelation()},
+                    failed_completion_events_map={Message1FailedToComplete: FailedCompletionCorrelation()},
+                ).plugin
+            ],
+        )
+
+        await app.start()
+        await app.stop()
+
+        assert len(store) == 3
+        assert all(subscribers == {in_memory_transport.address} for subscribers in store.values())
+
+    async def test_send_only_skips_subscribing_to_correlated_events(
+        self,
+        in_memory_transport: InMemoryTransport,
+        serializer: Serializer,
+    ):
+        """A send-only app never receives, so the completion events are left to
+        a non-send-only app (e.g. a separate worker) to subscribe to and handle.
+        """
+        store = InMemorySubscriptionStore()
+        app = Mersal(
+            "m1",
+            BuiltinHandlerActivator(),
+            transport=in_memory_transport,
+            serializer=serializer,
+            subscription_storage=InMemorySubscriptionStorage.centralized(store),
+            autosubscribe=AutosubscribeConfig(set()),
+            send_only=True,
+            plugins=[
+                PollingConfig(
+                    DefaultPoller(),
+                    accepted_events_map={Message1Accepted: AcceptedCorrelation()},
+                    successful_completion_events_map={Message1CompletedSuccessfully: SuccessfulCompletionCorrelation()},
+                    failed_completion_events_map={Message1FailedToComplete: FailedCompletionCorrelation()},
+                ).plugin
+            ],
+        )
+
+        await app.start()
+        await app.stop()
+
+        assert len(store) == 0
