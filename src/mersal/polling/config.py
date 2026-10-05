@@ -3,11 +3,12 @@ from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
 
 from mersal.messages import TransportMessage
-from mersal.polling.plugin import PollingPlugin
+from mersal.polling.plugin import CompleteOn, PollingPlugin
 from mersal.polling.poller import Poller, ProblemDetails
 
 __all__ = (
     "AcceptedCorrelation",
+    "CompleteOn",
     "FailedCompletionCorrelation",
     "PollingConfig",
     "SuccessfulCompletionCorrelation",
@@ -77,6 +78,21 @@ class PollingConfig:
         failed_completion_events_map: Map of event types to failed completion correlations
         auto_publish_completion_events: Whether to automatically publish message completion events
         exclude_from_completion_events: Message types to exclude from automatic completion events
+        complete_on: When a correlated result is recorded.
+
+            - ``"consume"`` (default): the app subscribes to the correlated events and
+              records the result when it receives one; automatic completion is a
+              `MessageCompletedEvent` sent to the ``reply_to`` address. Works with
+              any poller, including an in-memory one living in another process than
+              the handler, since the result travels back over the bus.
+            - ``"publish"``: the result is recorded when the handler publishes the
+              correlated event (or, for automatic completion, when it handles the
+              message) - no extra trip over the bus and no subscriptions to the
+              correlated events. The poller must be reachable from the handler's
+              process (e.g. a database-backed one). With a `TransactionalPoller`
+              the result is written in the handler's own transaction, so it commits
+              atomically with the handler's work (and the outbox, when enabled);
+              otherwise it is pushed once the transaction has committed.
     """
 
     poller: Poller | None = None
@@ -86,6 +102,7 @@ class PollingConfig:
     auto_publish_completion_events: bool = True
     exclude_from_completion_events: set[type] = field(default_factory=set)
     problem_factory: Callable[[Exception, TransportMessage], ProblemDetails] | None = None
+    complete_on: CompleteOn = "consume"
 
     @property
     def plugin(self) -> PollingPlugin:

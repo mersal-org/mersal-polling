@@ -63,6 +63,7 @@ def message_completion_event_publisher(
 def register_message_completion_publishers(
     activator: HandlerActivator,
     exclude_types: set[type] | None = None,
+    handler_factory: Callable[[MessageContext, Mersal], Callable[[Any], Awaitable[None]]] | None = None,
 ) -> None:
     """Register message completion event publishers for all message types.
 
@@ -73,6 +74,9 @@ def register_message_completion_publishers(
     Args:
         activator: The handler activator to register completion publishers with
         exclude_types: Message types to exclude from completion event publishing
+        handler_factory: Builds the completion handler registered for each message
+            type, instead of a `message_completion_event_publisher` (e.g. one that
+            records the completion directly - see `PollingConfig.complete_on`).
     """
     # Create exclude set (always exclude MessageCompletedEvent itself)
     exclude: set[type] = set() if exclude_types is None else exclude_types.copy()
@@ -95,5 +99,5 @@ def register_message_completion_publishers(
                     _=[],
                 )
 
-            activator.register(message_type, completion_publisher_factory)
+            activator.register(message_type, handler_factory or completion_publisher_factory)
             completion_event_registry.add(message_type)

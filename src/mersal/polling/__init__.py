@@ -2,6 +2,7 @@ from importlib.metadata import version
 
 from .config import (
     AcceptedCorrelation,
+    CompleteOn,
     FailedCompletionCorrelation,
     PollingConfig,
     SuccessfulCompletionCorrelation,
@@ -12,13 +13,14 @@ from .message_completion_handler import (
     message_completion_event_publisher,
     register_message_completion_publishers,
 )
-from .poller import Poller, PollingResult, PollingStatus, ProblemDetails
+from .poller import Poller, PollingResult, PollingStatus, ProblemDetails, TransactionalPoller
 from .poller_with_timeout import PollerWithTimeout, PollingTimeoutError
 from .testing import PollerTestDouble
 
 __all__ = [
     "REPLY_TO_HEADER",
     "AcceptedCorrelation",
+    "CompleteOn",
     "DefaultPoller",
     "FailedCompletionCorrelation",
     "Poller",
@@ -30,6 +32,7 @@ __all__ = [
     "PollingTimeoutError",
     "ProblemDetails",
     "SuccessfulCompletionCorrelation",
+    "TransactionalPoller",
     "message_completion_event_publisher",
     "register_message_completion_publishers",
 ]

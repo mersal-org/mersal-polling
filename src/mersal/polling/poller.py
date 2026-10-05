@@ -1,11 +1,15 @@
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from mersal.transport import TransactionContext
 
 __all__ = (
     "Poller",
     "PollingResult",
     "PollingStatus",
     "ProblemDetails",
+    "TransactionalPoller",
 )
 
 PollingStatus = Literal["accepted", "succeeded", "failed"]
@@ -127,4 +131,30 @@ class Poller(Protocol):
             data: Success data (for rich results, batch operations)
             problem: Structured error information (RFC 7807) for failures
         """
+        ...
+
+
+@runtime_checkable
+class TransactionalPoller(Protocol):
+    """A poller that can store a result as part of the handler's own transaction.
+
+    With `PollingConfig.complete_on="publish"`, a result recorded this way commits
+    (or rolls back) together with the handler's work - and with the outbox rows,
+    when the outbox is enabled - instead of in a separate transaction of its own.
+    """
+
+    def can_push_in_transaction(self, transaction_context: "TransactionContext") -> bool:
+        """Whether `push_in_transaction` can be used with this transaction context."""
+        ...
+
+    async def push_in_transaction(
+        self,
+        transaction_context: "TransactionContext",
+        message_id: str,
+        status: PollingStatus = "succeeded",
+        data: dict[str, Any] | None = None,
+        problem: ProblemDetails | None = None,
+    ) -> None:
+        """Store the result of a message processing within the transaction of
+        `transaction_context`, without committing it."""
         ...

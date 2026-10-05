@@ -1,17 +1,25 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 from mersal.activation import HandlerActivator
 from mersal.lifespan import LifespanHandler
 from mersal.logging import Logger
 from mersal.messages import MessageCompletedEvent
+from mersal.pipeline import PipelineInjectionPosition, PipelineInjector
+from mersal.pipeline.pipeline import OutgoingPipeline
+from mersal.pipeline.send.serialize_outgoing_message_step import SerializeOutgoingMessageStep
 from mersal.plugins import Plugin
 from mersal.polling.error_handler_poller_wrapper import (
     ErrorHandlerPollerWrapper,
 )
 from mersal.polling.message_completion_handler import register_message_completion_publishers
 from mersal.polling.poller import Poller
+from mersal.polling.publish_completion import (
+    PollingResultRecorder,
+    PublishCompletionStep,
+    message_completion_recorder,
+)
 from mersal.retry import ErrorHandler
 
 if TYPE_CHECKING:
@@ -27,7 +35,14 @@ if TYPE_CHECKING:
         SuccessfulCompletionCorrelation,
     )
 
-__all__ = ("PollingPlugin",)
+__all__ = (
+    "CompleteOn",
+    "PollingPlugin",
+)
+
+
+CompleteOn: TypeAlias = Literal["consume", "publish"]
+"""When a correlated polling result is recorded - see `PollingConfig.complete_on`."""
 
 
 class PollingPlugin(Plugin):
@@ -51,6 +66,7 @@ class PollingPlugin(Plugin):
         self._auto_publish_completion_events = config.auto_publish_completion_events
         self._exclude_from_completion_events = config.exclude_from_completion_events
         self._problem_factory = config.problem_factory
+        self._complete_on = config.complete_on
 
     def _resolve_poller(self, configurator: StandardConfigurator) -> Poller:
         if self._poller is None:
@@ -64,11 +80,15 @@ class PollingPlugin(Plugin):
             configurator: The standard configurator for the application
         """
 
-        # Configure event subscriptions for MessageCompletedEvent and other events
-        self._configure_event_subscriptions(configurator)
-
         # Integrate with error handling
         self._configure_error_handler(configurator)
+
+        if self._complete_on == "consume":
+            # Configure event subscriptions for the correlated events
+            self._configure_event_subscriptions(configurator)
+        else:
+            # Record results as the correlated events are sent instead
+            self._configure_publish_completion(configurator)
 
         # Register handlers for completion events
         self._configure_completion_event_handlers(configurator)
@@ -139,11 +159,16 @@ class PollingPlugin(Plugin):
             activator: HandlerActivator = configurator.get(HandlerActivator)  # type: ignore[type-abstract]
 
             poller = self._resolve_poller(configurator)
-            # Register handler for MessageCompletedEvent
+            # Register handler for MessageCompletedEvent. Kept in "publish" mode too:
+            # it's sent directly (not subscribed to), e.g. by an app still completing
+            # on consume.
             activator.register(
                 MessageCompletedEvent,
                 lambda __, _: self._message_completed_event_handler_factory(poller),
             )
+
+            if self._complete_on == "publish":
+                return activator
 
             # Register handlers for custom acceptance events
             for (
@@ -198,10 +223,44 @@ class PollingPlugin(Plugin):
 
         def decorate_activator(configurator: StandardConfigurator) -> Any:
             activator: HandlerActivator = configurator.get(HandlerActivator)  # type: ignore[type-abstract]
-            register_message_completion_publishers(activator, self._exclude_from_completion_events)
+            handler_factory = None
+            if self._complete_on == "publish":
+                recorder = PollingResultRecorder(self._resolve_poller(configurator))
+
+                def handler_factory(message_context: MessageContext, _: Mersal) -> Callable[[Any], Awaitable[None]]:
+                    return message_completion_recorder(message_context, recorder)
+
+            register_message_completion_publishers(
+                activator, self._exclude_from_completion_events, handler_factory=handler_factory
+            )
             return activator
 
         configurator.decorate(HandlerActivator, decorate_activator)
+
+    def _configure_publish_completion(self, configurator: StandardConfigurator) -> None:
+        """Record polling results as the correlated events are sent (``complete_on="publish"``).
+
+        Args:
+            configurator: The standard configurator for the application
+        """
+
+        def decorate_outgoing_pipeline(configurator: StandardConfigurator) -> PipelineInjector:
+            pipeline = PipelineInjector(configurator.get(OutgoingPipeline))  # type: ignore[type-abstract]
+            # After `FlowCorrelationStep`, which sets the correlation id results are
+            # recorded under by default.
+            pipeline.inject_step(
+                PublishCompletionStep(
+                    PollingResultRecorder(self._resolve_poller(configurator)),
+                    self._accepted_events_map,
+                    self._successful_completion_events_map,
+                    self._failed_completion_events_map,
+                ),
+                PipelineInjectionPosition.BEFORE,
+                SerializeOutgoingMessageStep,
+            )
+            return pipeline
+
+        configurator.decorate(OutgoingPipeline, decorate_outgoing_pipeline)
 
     def _message_completed_event_handler_factory(self, poller: Poller) -> Callable[[Any], Awaitable[None]]:
         async def _message_completed_event_handler(event: MessageCompletedEvent) -> None:

@@ -29,8 +29,10 @@ from mersal.polling.config import (
     FailedCompletionCorrelation,
     SuccessfulCompletionCorrelation,
 )
+from mersal.polling.poller import PollingStatus
 from mersal.serialization.serializers import Serializer
 from mersal.testing.core.message_handlers.message_handler_that_counts import MessageHandlerThatCounts
+from mersal.transport import TransactionContext
 from mersal.transport.in_memory import InMemoryTransport
 
 __all__ = (
@@ -123,6 +125,46 @@ class MessageHandlerThatPublishes:
     async def __call__(self, message: Any):
         self.calls += 1
         await self.app.publish(self.published_message)
+
+
+class MessageHandlerThatPublishesThenThrows(MessageHandlerThatPublishes):
+    async def __call__(self, message: Any):
+        await super().__call__(message)
+        raise HandlerError()
+
+
+class TransactionalPollerSpy(DefaultPoller):
+    """An in-memory poller that also claims to push within a transaction, recording
+    which of its push methods were used."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.pushed_in_transaction: list[str] = []
+        self.pushed: list[str] = []
+
+    def can_push_in_transaction(self, transaction_context: TransactionContext) -> bool:
+        return True
+
+    async def push_in_transaction(
+        self,
+        transaction_context: TransactionContext,
+        message_id: str,
+        status: PollingStatus = "succeeded",
+        data: dict[str, Any] | None = None,
+        problem: ProblemDetails | None = None,
+    ) -> None:
+        self.pushed_in_transaction.append(message_id)
+        await super().push(message_id, status, data, problem)
+
+    async def push(
+        self,
+        message_id: str,
+        status: PollingStatus = "succeeded",
+        data: dict[str, Any] | None = None,
+        problem: ProblemDetails | None = None,
+    ) -> None:
+        self.pushed.append(message_id)
+        await super().push(message_id, status, data, problem)
 
 
 class TestPollingPlugin:
@@ -619,3 +661,213 @@ class TestPollingPlugin:
         await app.stop()
 
         assert len(store) == 0
+
+
+class TestPollingPluginCompleteOnPublish:
+    async def test_records_result_when_correlated_event_is_published_without_subscribing(
+        self,
+        in_memory_transport: InMemoryTransport,
+        serializer: Serializer,
+    ):
+        store = InMemorySubscriptionStore()
+        activator = BuiltinHandlerActivator()
+        poller = DefaultPoller()
+        app = Mersal(
+            "m1",
+            activator,
+            transport=in_memory_transport,
+            serializer=serializer,
+            subscription_storage=InMemorySubscriptionStorage.centralized(store),
+            autosubscribe=AutosubscribeConfig(set()),
+            plugins=[
+                PollingConfig(
+                    poller,
+                    accepted_events_map={Message2Accepted: AcceptedCorrelation()},
+                    successful_completion_events_map={
+                        Message1CompletedSuccessfully: SuccessfulCompletionCorrelation(
+                            data_builder=lambda _: {"answer": 42}
+                        ),
+                    },
+                    failed_completion_events_map={
+                        Message2FailedToComplete: FailedCompletionCorrelation(
+                            problem_builder=lambda _: ProblemDetails(
+                                type="https://api.example.com/problems/message2-failed",
+                                title="Message2 Failed",
+                                status=422,
+                            )
+                        ),
+                    },
+                    exclude_from_completion_events={Message1, Message2},
+                    complete_on="publish",
+                ).plugin
+            ],
+        )
+        activator.register(
+            Message1,
+            lambda m, b: MessageHandlerThatPublishes(m, b, Message1CompletedSuccessfully()),
+        )
+        activator.register(
+            Message2,
+            lambda m, b: MessageHandlerThatPublishes(m, b, Message2FailedToComplete()),
+        )
+        message1_id = uuid.uuid4()
+        message2_id = uuid.uuid4()
+        await app.start()
+
+        await app.send_local(Message1(), headers={"message_id": message1_id})
+        await app.send_local(Message2(), headers={"message_id": message2_id})
+        await anyio.sleep(0.5)
+
+        result1 = await poller.peek(str(message1_id))
+        result2 = await poller.peek(str(message2_id))
+        assert result1
+        assert result1.is_success
+        assert result1.data == {"answer": 42}
+        assert result2
+        assert result2.is_failure
+        assert result2.problem is not None
+        assert result2.problem.status == 422
+
+        await app.stop()
+
+        # Publishing looks the topics up, leaving empty entries in the defaultdict.
+        assert not any(store.values())
+
+    async def test_auto_completion_records_result_instead_of_sending_completion_event(
+        self,
+        in_memory_transport: InMemoryTransport,
+        in_memory_subscription_storage: InMemorySubscriptionStorage,
+        serializer: Serializer,
+    ):
+        activator = BuiltinHandlerActivator()
+        poller = DefaultPoller()
+        message_handler = MessageHandlerThatCounts()
+        completion_event_handler = MessageHandlerThatCounts()
+        activator.register(Message1, lambda __, _: message_handler)
+        activator.register(MessageCompletedEvent, lambda _, __: completion_event_handler)
+        app = Mersal(
+            "m1",
+            activator,
+            transport=in_memory_transport,
+            serializer=serializer,
+            subscription_storage=in_memory_subscription_storage,
+            autosubscribe=AutosubscribeConfig(set()),
+            plugins=[
+                PollingConfig(
+                    poller,
+                    auto_publish_completion_events=True,
+                    complete_on="publish",
+                ).plugin
+            ],
+        )
+        await app.start()
+
+        waited_on_id = uuid.uuid4()
+        not_waited_on_id = uuid.uuid4()
+        await app.send_local(
+            Message1(),
+            headers={"message_id": waited_on_id, REPLY_TO_HEADER: app.transport.address},
+        )
+        await app.send_local(Message1(), headers={"message_id": not_waited_on_id})
+        await anyio.sleep(0.5)
+
+        assert message_handler.count == 2
+        assert completion_event_handler.count == 0
+        result = await poller.peek(str(waited_on_id))
+        assert result
+        assert result.is_success
+        # Like the completion event publisher: nobody waits without `reply_to`.
+        assert await poller.peek(str(not_waited_on_id)) is None
+
+        await app.stop()
+
+    async def test_result_is_not_recorded_when_the_publishing_handler_fails(
+        self,
+        in_memory_transport: InMemoryTransport,
+        in_memory_subscription_storage: InMemorySubscriptionStorage,
+        serializer: Serializer,
+    ):
+        """The success event was published, but its transaction never committed -
+        so neither was the event sent nor may the result say "succeeded"."""
+        activator = BuiltinHandlerActivator()
+        poller = DefaultPoller()
+        app = Mersal(
+            "m1",
+            activator,
+            transport=in_memory_transport,
+            serializer=serializer,
+            subscription_storage=in_memory_subscription_storage,
+            autosubscribe=AutosubscribeConfig(set()),
+            plugins=[
+                PollingConfig(
+                    poller,
+                    successful_completion_events_map={
+                        Message1CompletedSuccessfully: SuccessfulCompletionCorrelation(),
+                    },
+                    exclude_from_completion_events={Message1},
+                    complete_on="publish",
+                ).plugin
+            ],
+        )
+        activator.register(
+            Message1,
+            lambda m, b: MessageHandlerThatPublishesThenThrows(m, b, Message1CompletedSuccessfully()),
+        )
+        message_id = uuid.uuid4()
+        await app.start()
+
+        await app.send_local(Message1(), headers={"message_id": message_id})
+        await anyio.sleep(0.5)
+
+        # Only the error handler's result once the message is given up on.
+        result = await poller.peek(str(message_id))
+        assert result
+        assert result.is_failure
+        assert result.problem is not None
+        assert result.problem.status == 500
+
+        await app.stop()
+
+    async def test_uses_transactional_push_only_while_handling_a_message(
+        self,
+        in_memory_transport: InMemoryTransport,
+        in_memory_subscription_storage: InMemorySubscriptionStorage,
+        serializer: Serializer,
+    ):
+        activator = BuiltinHandlerActivator()
+        poller = TransactionalPollerSpy()
+        app = Mersal(
+            "m1",
+            activator,
+            transport=in_memory_transport,
+            serializer=serializer,
+            subscription_storage=in_memory_subscription_storage,
+            autosubscribe=AutosubscribeConfig(set()),
+            plugins=[
+                PollingConfig(
+                    poller,
+                    successful_completion_events_map={
+                        Message1CompletedSuccessfully: SuccessfulCompletionCorrelation(),
+                    },
+                    exclude_from_completion_events={Message1},
+                    complete_on="publish",
+                ).plugin
+            ],
+        )
+        activator.register(
+            Message1,
+            lambda m, b: MessageHandlerThatPublishes(m, b, Message1CompletedSuccessfully()),
+        )
+        handled_id = uuid.uuid4()
+        published_directly_id = uuid.uuid4()
+        await app.start()
+
+        await app.send_local(Message1(), headers={"message_id": handled_id})
+        # Not from a handler: no transaction of a message being handled to join.
+        await app.publish(Message1CompletedSuccessfully(), headers={"correlation_id": published_directly_id})
+        await anyio.sleep(0.5)
+
+        assert poller.pushed_in_transaction == [str(handled_id)]
+        assert poller.pushed == [str(published_directly_id)]
+
+        await app.stop()
