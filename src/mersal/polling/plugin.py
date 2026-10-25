@@ -223,12 +223,14 @@ class PollingPlugin(Plugin):
 
         def decorate_activator(configurator: StandardConfigurator) -> Any:
             activator: HandlerActivator = configurator.get(HandlerActivator)  # type: ignore[type-abstract]
-            handler_factory = None
+            handler_factory: Callable[[MessageContext, Mersal], Callable[[Any], Awaitable[None]]] | None = None
             if self._complete_on == "publish":
                 recorder = PollingResultRecorder(self._resolve_poller(configurator))
 
-                def handler_factory(message_context: MessageContext, _: Mersal) -> Callable[[Any], Awaitable[None]]:
+                def record_completion(message_context: MessageContext, _: Mersal) -> Callable[[Any], Awaitable[None]]:
                     return message_completion_recorder(message_context, recorder)
+
+                handler_factory = record_completion
 
             register_message_completion_publishers(
                 activator, self._exclude_from_completion_events, handler_factory=handler_factory
